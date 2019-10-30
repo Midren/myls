@@ -110,16 +110,17 @@ std::vector<boost::program_options::option> end_of_opts_parser(std::vector<std::
 void parse_config(int argc, char **argv) {
     boost::program_options::options_description optionsDescription("Options");
     optionsDescription.add_options()("help,h", "print help message")
-            (",l", boost::program_options::bool_switch()->composing()->zero_tokens(),
+            (",l", boost::program_options::value<std::vector<bool>>()->zero_tokens(),
              "more wide information: name, size, date and time of last modification")
-            (",r", "reverse sorted output")
-            (",R", "list subdirectories recursively")
-            (",F", "states the types of special files:\n"
-                           "\t* - executable\n"
-                           "\t@ - symlink\n"
-                           "\t| - named channel\n"
-                           "\t= - socket\n"
-                           "\t? - other\n")
+            (",r", boost::program_options::value<std::vector<bool>>()->zero_tokens(), "reverse sorted output")
+            (",R", boost::program_options::value<std::vector<bool>>()->zero_tokens(), "list subdirectories recursively")
+            (",F", boost::program_options::value<std::vector<bool>>()->zero_tokens(),
+             "states the types of special files:\n"
+             "\t* - executable\n"
+             "\t@ - symlink\n"
+             "\t| - named channel\n"
+             "\t= - socket\n"
+             "\t? - other\n")
             ("sort", boost::program_options::value<std::vector<std::string>>()->composing()->default_value(
                     std::vector<std::string>{"N"}, "N"), "specify sort strategy:\n"
                                                          "\tU - unsorted\n"
