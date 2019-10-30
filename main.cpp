@@ -110,10 +110,11 @@ std::vector<boost::program_options::option> end_of_opts_parser(std::vector<std::
 void parse_config(int argc, char **argv) {
     boost::program_options::options_description optionsDescription("Options");
     optionsDescription.add_options()("help,h", "print help message")
-            ("long-listing,l", "more wide information: name, size, date and time of last modification")
-            ("reverse,r", "reverse sorted output")
-            ("recursive,R", "list subdirectories recursively")
-            ("classify,F", "states the types of special files:\n"
+            (",l", boost::program_options::bool_switch()->composing()->zero_tokens(),
+             "more wide information: name, size, date and time of last modification")
+            (",r", "reverse sorted output")
+            (",R", "list subdirectories recursively")
+            (",F", "states the types of special files:\n"
                            "\t* - executable\n"
                            "\t@ - symlink\n"
                            "\t| - named channel\n"
@@ -178,16 +179,17 @@ void parse_config(int argc, char **argv) {
                         continue;
                 }
     }
-    cfg.is_verbose = vm.count("long-listing") != 0;
-    cfg.sort_order = vm.count("reverse") ? SortOrder::Reversed : SortOrder::Straightforward;
-    cfg.is_recursive = vm.count("recursive") != 0;
-    cfg.classify = vm.count("classify") != 0;
+    cfg.is_verbose = vm.count("-l") != 0;
+    cfg.sort_order = vm.count("-r") ? SortOrder::Reversed : SortOrder::Straightforward;
+    cfg.is_recursive = vm.count("-R") != 0;
+    cfg.classify = vm.count("-F") != 0;
     for (const auto &target : vm["targets"].as<std::vector<std::string>>())
         cfg.targets.push_back(target);
 }
 
 int main(int argc, char **argv) {
     parse_config(argc, argv);
+    std::cout << cfg.is_verbose << std::endl;
     if (nftw("/home/midren/Documents", dir_handler, 1, FTW_MOUNT | FTW_PHYS | FTW_ACTIONRETVAL) != -1) {
         sort_files();
         for (const auto &dir: dirs) {
