@@ -16,12 +16,12 @@ enum SortOrder {
 };
 
 struct Config {
-    SortOrder sort_order;
-    SortCriteria sort_criteria;
-    bool is_directories_first;
-    bool is_special_outside;
-    bool is_recursive;
-    bool is_verbose;
+    SortOrder sort_order = SortOrder::Straightforward;
+    SortCriteria sort_criteria = SortCriteria::Name;
+    bool is_directories_first = false;
+    bool is_special_outside = false;
+    bool is_recursive = false;
+    bool is_verbose = false;
 };
 
 int dir_handler(const char *filename, const struct stat *st, int info, struct FTW *ftw) {
@@ -34,6 +34,6 @@ int dir_handler(const char *filename, const struct stat *st, int info, struct FT
 }
 
 int main(int argc, char **argv) {
-    int err = nftw(".", dir_handler, 0, FTW_CHDIR | FTW_MOUNT);
+    int err = nftw(".", dir_handler, 0, FTW_CHDIR | FTW_MOUNT | FTW_PHYS);
     return 0;
 }
