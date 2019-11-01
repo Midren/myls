@@ -220,7 +220,7 @@ void print_file(const std::tuple<std::string, struct stat, int> &f) {
             std::cout << "|";
         else
             std::cout << "?";
-    std::cout << std::get<0>(f);
+    std::cout << basename(std::get<0>(f).c_str());
     if (cfg.is_verbose) {
         struct tm *my_tm = localtime(&std::get<1>(f).st_mtim.tv_sec);
         std::cout << "\t\t" << std::get<1>(f).st_size << " " << 1900 + my_tm->tm_year << "-"
@@ -237,7 +237,7 @@ int outputTarget(const std::string &target, bool multipleTargets) {
         for (const auto &dir: dirs) {
             for (const auto &f: dir) {
                 if (multipleTargets && std::get<0>(f) == std::get<0>(dir[0])) {
-                    std::cout << target;
+                    std::cout << target << (S_ISDIR(std::get<1>(f).st_mode) ? ": " : " ") << std::endl;
                 } else {
                     print_file(f);
                 }
