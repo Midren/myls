@@ -1,223 +1,51 @@
 #include <iostream>
-#include <boost/program_options.hpp>
-#include <vector>
-#include <tuple>
+#include <map>
 #include <algorithm>
+#include <functional>
 
 #include <ftw.h>
 
-enum SortCriteria {
-    Unsorted,
-    Size,
-    Time,
-    Extension,
-    Name
-};
+#include "config.h"
+#include "file.h"
+#include "util.h"
 
-enum SortOrder {
-    Straightforward,
-    Reversed
-};
+static std::map<std::string, std::vector<file>> dirs;
+static Config cfg;
+static int err = 0;
 
-struct Config {
-    std::vector<std::string> targets;
-    SortOrder sort_order;
-    SortCriteria sort_criteria;
-    bool is_directories_first;
-    bool is_special_outside;
-    bool is_recursive;
-    bool is_verbose;
-    bool classify;
-};
-
-Config cfg;
-std::map<std::string, std::vector<std::tuple<std::string, struct stat, int>>> dirs;
-
-bool is_special(const __mode_t &st_mode) {
-    return !S_ISDIR(st_mode) && (S_IEXEC & st_mode || !S_ISREG(st_mode));
-}
-
-bool sort_comparator(const std::tuple<std::string, struct stat, int> &x,
-                     const std::tuple<std::string, struct stat, int> &y) {
-    if (cfg.is_special_outside && is_special(std::get<1>(x).st_mode)) {
-        if (!is_special(std::get<1>(y).st_mode))
-            return false;
-    } else if (cfg.is_special_outside && is_special(std::get<1>(y).st_mode)) {
-        return true;
-    }
-
-    if (cfg.is_directories_first && S_ISDIR(std::get<1>(x).st_mode)) {
-        if (!S_ISDIR(std::get<1>(y).st_mode))
-            return true;
-    } else if (cfg.is_directories_first && S_ISDIR(std::get<1>(y).st_mode)) {
-        return false;
-    }
-
-    bool ret = false;
-    bool is_equal = false;
-    switch (cfg.sort_criteria) {
-        case SortCriteria::Unsorted:
-            ret = false;
-            break;
-        case SortCriteria::Size:
-            ret = std::get<1>(x).st_size < std::get<1>(y).st_size;
-            if (std::get<1>(x).st_size == std::get<1>(y).st_size)
-                is_equal = true;
-            break;
-        case SortCriteria::Time:
-            ret = std::get<1>(x).st_mtim.tv_sec > std::get<1>(y).st_mtim.tv_sec;
-            if (std::get<1>(x).st_mtim.tv_sec == std::get<1>(y).st_mtim.tv_sec)
-                is_equal = true;
-            break;
-        case SortCriteria::Name:
-            ret = std::get<0>(x) < std::get<0>(y);
-            break;
-            is_equal = true;
-        case SortCriteria::Extension:
-            size_t x_pos = std::get<0>(x).find_last_of('.'), y_pos = std::get<0>(y).find_last_of('.');
-            ret = std::get<0>(x).substr(x_pos + 1) < std::get<0>(y).substr(y_pos + 1);
-            if (std::get<0>(x).substr(x_pos + 1) == std::get<0>(y).substr(y_pos + 1))
-                is_equal = true;
-            break;
-    }
-    if (is_equal)
-        ret = std::get<0>(x) < std::get<0>(y);
-    return cfg.sort_order == SortOrder::Reversed ? !ret : ret;
-}
-
-void sort_files() {
-    for (auto &dir: dirs) {
-        std::sort(dir.second.begin(), dir.second.end(), sort_comparator);
-    }
-}
-
-int dir_handler(const char *filename, const struct stat *st, int info, struct FTW *ftw) {
+int dir_iterator_callback(const char *filename, const struct stat *st, int info, struct FTW *ftw) {
     if (!cfg.is_recursive && ftw->level > 1)
         return FTW_SKIP_SUBTREE;
-    std::string fname = filename;
+
+    if (info == FTW_DNR) {
+        std::cerr << "myls: cannot access '" << filename << "': Directory cannot be read" << std::endl;
+        err = 2;
+    }
+
+    std::string filename_str = filename;
     if (cfg.is_recursive && info == FTW_D)
-        dirs[filename].emplace_back(std::string(filename), *st, info);
-    if (ftw->level > 0 || info == FTW_F)
-        dirs[fname.substr(0, fname.find_last_of(basename(filename)) - strlen(basename(filename)))].emplace_back(
-                std::string(filename), *st, info);
+        dirs[filename].emplace_back(filename_str, *st, info);
+    if (ftw->level > 0 || info == FTW_F) {
+        std::string dirname = filename_str.substr(0, filename_str.find_last_of(basename(filename)) -
+                                                     strlen(basename(filename)));
+        dirs[dirname].emplace_back(filename_str, *st, info);
+    }
     return 0;
 }
 
-void parse_config(int argc, char **argv) {
-    boost::program_options::options_description optionsDescription("Options");
-    optionsDescription.add_options()("help,h", "print help message")
-            (",l", boost::program_options::value<std::vector<bool>>()->zero_tokens(),
-             "more wide information: name, size, date and time of last modification")
-            (",r", boost::program_options::value<std::vector<bool>>()->zero_tokens(), "reverse sorted output")
-            (",R", boost::program_options::value<std::vector<bool>>()->zero_tokens(), "list subdirectories recursively")
-            (",F", boost::program_options::value<std::vector<bool>>()->zero_tokens(),
-             "states the types of special files:\n"
-             "\t* - executable\n"
-             "\t@ - symlink\n"
-             "\t| - named channel\n"
-             "\t= - socket\n"
-             "\t? - other\n")
-            ("sort", boost::program_options::value<std::vector<std::string>>()->composing()->default_value(
-                    std::vector<std::string>{"N"}, "N"), "specify sort strategy:\n"
-                                                         "\tU - unsorted\n"
-                                                         "\tS - size\n"
-                                                         "\tt - last modified\n"
-                                                         "\tX - extension\n"
-                                                         "\tN - name (default)\n"
-                                                         "\tD - directories first (can be used with first 5)\n"
-                                                         "\ts - special files separate (can be used with first 5)\n");
-    boost::program_options::options_description hidden("hidden");
-    hidden.add_options()
-            ("targets", boost::program_options::value<std::vector<std::string>>()->composing()->default_value(
-                    std::vector<std::string>{"."}, "."));
-    boost::program_options::options_description commandLineOptions;
-    commandLineOptions.add(optionsDescription).add(hidden);
-    boost::program_options::positional_options_description positional;
-    positional.add("targets", -1);
 
-    boost::program_options::variables_map vm;
-    auto parsed = boost::program_options::command_line_parser(argc, argv).options(commandLineOptions).positional(
-            positional).run();
-    boost::program_options::store(parsed, vm);
-
-    if (vm.count("help")) {
-        std::cout << optionsDescription << std::endl;
-        exit(0);
-    }
-
-    if (vm.count("sort")) {
-        auto sortingStrategies = vm["sort"].as<std::vector<std::string>>();
-        for (const auto &argument:sortingStrategies)
-            for (const auto &strategy:argument)
-                switch (strategy) {
-                    case 'U':
-                        cfg.sort_criteria = SortCriteria::Unsorted;
-                        break;
-                    case 'S':
-                        cfg.sort_criteria = SortCriteria::Size;
-                        break;
-                    case 't':
-                        cfg.sort_criteria = SortCriteria::Time;
-                        break;
-                    case 'X':
-                        cfg.sort_criteria = SortCriteria::Extension;
-                        break;
-                    case 'N':
-                        cfg.sort_criteria = SortCriteria::Name;
-                        break;
-                    case 'D':
-                        cfg.is_directories_first = true;
-                        break;
-                    case 's':
-                        cfg.is_special_outside = true;
-                        break;
-                    default:
-                        continue;
-                }
-    }
-    cfg.is_verbose = vm.count("-l") != 0;
-    cfg.sort_order = vm.count("-r") ? SortOrder::Reversed : SortOrder::Straightforward;
-    cfg.is_recursive = vm.count("-R") != 0;
-    cfg.classify = vm.count("-F") != 0;
-    for (const auto &target : vm["targets"].as<std::vector<std::string>>())
-        cfg.targets.push_back(target);
-}
-
-void print_file(const std::tuple<std::string, struct stat, int> &f) {
-    if (S_ISDIR(std::get<1>(f).st_mode))
-        std::cout << "/";
-    else if (cfg.classify && is_special(std::get<1>(f).st_mode))
-        if (S_IEXEC & std::get<1>(f).st_mode)
-            std::cout << "*";
-        else if (S_ISLNK(std::get<1>(f).st_mode))
-            std::cout << "@";
-        else if (S_ISSOCK(std::get<1>(f).st_mode))
-            std::cout << "=";
-        else if (S_ISFIFO(std::get<1>(f).st_mode))
-            std::cout << "|";
-        else
-            std::cout << "?";
-    std::cout << basename(std::get<0>(f).c_str());
-    if (cfg.is_verbose) {
-        struct tm *my_tm = localtime(&std::get<1>(f).st_mtim.tv_sec);
-        std::cout << "\t\t" << std::get<1>(f).st_size << " " << 1900 + my_tm->tm_year << "-"
-                  << my_tm->tm_mon
-                  << "-"
-                  << my_tm->tm_mday << " " << my_tm->tm_hour << ":" << my_tm->tm_min
-                  << std::endl;
-    } else {
-        std::cout << " ";
-    }
-}
-
-int outputTarget(const std::string &target, bool multipleTargets) {
-    if (nftw(target.c_str(), dir_handler, 1, FTW_MOUNT | FTW_PHYS | FTW_ACTIONRETVAL | FTW_DEPTH) != -1) {
-        sort_files();
+int print_files(const std::string &target, bool multipleTargets) {
+    dirs.clear();
+    if (nftw(target.c_str(), dir_iterator_callback, 1, FTW_MOUNT | FTW_PHYS | FTW_ACTIONRETVAL | FTW_DEPTH) != -1) {
+        for (auto &dir: dirs) {
+            std::sort(dir.second.begin(), dir.second.end(),
+                      std::bind(sort_comparator, std::placeholders::_1, std::placeholders::_2, std::cref(cfg)));
+        }
         for (const auto &dir: dirs) {
-            if ((multipleTargets || dirs.size() > 1) && std::get<0>(dir.second[0]) != dir.first)
+            if ((multipleTargets || dirs.size() > 1) && get_file_name(dir.second[0]) != dir.first)
                 std::cout << dir.first << ":" << std::endl;
             for (const auto &f: dir.second) {
-                print_file(f);
+                print_file(f, cfg);
             }
             std::cout << std::endl << std::endl;
         }
@@ -225,16 +53,16 @@ int outputTarget(const std::string &target, bool multipleTargets) {
         std::cerr << "myls: cannot access '" << target << "': No such file or directory" << std::endl;
         return 1;
     }
-    return 0;
+    return err;
 }
 
 int main(int argc, char **argv) {
-    parse_config(argc, argv);
+    cfg = parse_config(argc, argv);
     bool multi = cfg.targets.size() > 1;
+    int error;
     for (const auto &target:cfg.targets) {
-        dirs.clear();
-        if (outputTarget(target, multi))
-            return 1;
+        if ((error = print_files(target, multi)))
+            return error;
     }
     return 0;
 }
