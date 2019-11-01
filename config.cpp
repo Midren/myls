@@ -38,8 +38,12 @@ Config get_config(const boost::program_options::variables_map &vm) {
     cfg.sort_order = vm.count("-r") ? SortOrder::Reversed : SortOrder::Straightforward;
     cfg.is_recursive = vm.count("-R") != 0;
     cfg.classify = vm.count("-F") != 0;
-    for (const auto &target : vm["targets"].as<std::vector<std::string >>())
-        cfg.targets.push_back(target);
+    for (const auto &target : vm["targets"].as<std::vector<std::string >>()) {
+        if (target[0] == '\"' && target.back() == '\"')
+            cfg.targets.emplace_back(target, 1, target.size() - 2);
+        else
+            cfg.targets.push_back(target);
+    }
 
     return cfg;
 }

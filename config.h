@@ -19,13 +19,13 @@ enum SortOrder {
 
 struct Config {
     std::vector<std::string> targets;
-    SortOrder sort_order;
-    SortCriteria sort_criteria;
-    bool is_directories_first;
-    bool is_special_outside;
-    bool is_recursive;
-    bool is_verbose;
-    bool classify;
+    SortOrder sort_order = SortOrder::Straightforward;
+    SortCriteria sort_criteria = SortCriteria::Name;
+    bool is_directories_first = false;
+    bool is_special_outside = false;
+    bool is_recursive = false;
+    bool is_verbose = false;
+    bool classify = false;
 };
 
 Config parse_config(int argc, char **argv);
