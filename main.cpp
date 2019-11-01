@@ -188,33 +188,37 @@ void parse_config(int argc, char **argv) {
         cfg.targets.push_back(target);
 }
 
+void print_file(const std::tuple<std::string, struct stat, int> &f) {
+    if (std::get<2>(f) == FTW_D)
+        std::cout << "/";
+    else if (cfg.classify)
+        if (S_IEXEC & std::get<1>(f).st_mode)
+            std::cout << "*";
+        else if (S_ISLNK(std::get<1>(f).st_mode))
+            std::cout << "@";
+        else if (S_ISSOCK(std::get<1>(f).st_mode))
+            std::cout << "=";
+        else if (S_ISFIFO(std::get<1>(f).st_mode))
+            std::cout << "|";
+        else
+            std::cout << "?";
+    std::cout << std::get<0>(f);
+    if (cfg.is_verbose) {
+        struct tm *my_tm = localtime(&std::get<1>(f).st_mtim.tv_sec);
+        std::cout << "\t\t" << std::get<1>(f).st_size << " " << 1900 + my_tm->tm_year << "-"
+                  << my_tm->tm_mon
+                  << "-"
+                  << my_tm->tm_mday << " " << my_tm->tm_hour << ":" << my_tm->tm_min;
+    }
+    std::cout << std::endl;
+}
+
 int outputTarget(const std::string &target) {
     if (nftw(target.c_str(), dir_handler, 1, FTW_MOUNT | FTW_PHYS | FTW_ACTIONRETVAL) != -1) {
         sort_files();
         for (const auto &dir: dirs) {
             for (const auto &f: dir) {
-                if (std::get<2>(f) == FTW_D)
-                    std::cout << "/";
-                else if (cfg.classify)
-                    if (S_IEXEC & std::get<1>(f).st_mode)
-                        std::cout << "*";
-                    else if (S_ISLNK(std::get<1>(f).st_mode))
-                        std::cout << "@";
-                    else if (S_ISSOCK(std::get<1>(f).st_mode))
-                        std::cout << "=";
-                    else if (S_ISFIFO(std::get<1>(f).st_mode))
-                        std::cout << "|";
-                    else
-                        std::cout << "?";
-                std::cout << std::get<0>(f);
-                if (cfg.is_verbose) {
-                    struct tm *my_tm = localtime(&std::get<1>(f).st_mtim.tv_sec);
-                    std::cout << "\t\t" << std::get<1>(f).st_size << " " << 1900 + my_tm->tm_year << "-"
-                              << my_tm->tm_mon
-                              << "-"
-                              << my_tm->tm_mday << " " << my_tm->tm_hour << ":" << my_tm->tm_min;
-                }
-                std::cout << std::endl;
+                print_file(f);
             }
             std::cout << std::endl;
         }
