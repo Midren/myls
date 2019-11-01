@@ -33,8 +33,26 @@ struct Config {
 Config cfg;
 std::vector<std::vector<std::tuple<std::string, struct stat, int>>> dirs;
 
+bool is_special(const __mode_t &st_mode) {
+    return !S_ISDIR(st_mode) && (S_IEXEC & st_mode || !S_ISREG(st_mode));
+}
+
 bool sort_comparator(const std::tuple<std::string, struct stat, int> &x,
                      const std::tuple<std::string, struct stat, int> &y) {
+    if (cfg.is_special_outside && is_special(std::get<1>(x).st_mode)) {
+        if (!is_special(std::get<1>(y).st_mode))
+            return false;
+    } else if (cfg.is_special_outside && is_special(std::get<1>(y).st_mode)) {
+        return true;
+    }
+
+    if (cfg.is_directories_first && S_ISDIR(std::get<1>(x).st_mode)) {
+        if (!S_ISDIR(std::get<1>(y).st_mode))
+            return true;
+    } else if (cfg.is_directories_first && S_ISDIR(std::get<1>(y).st_mode)) {
+        return false;
+    }
+
     bool ret = false;
     bool is_equal = false;
     switch (cfg.sort_criteria) {
@@ -191,7 +209,7 @@ void parse_config(int argc, char **argv) {
 void print_file(const std::tuple<std::string, struct stat, int> &f) {
     if (std::get<2>(f) == FTW_D)
         std::cout << "/";
-    else if (cfg.classify)
+    else if (cfg.classify && is_special(std::get<1>(f).st_mode))
         if (S_IEXEC & std::get<1>(f).st_mode)
             std::cout << "*";
         else if (S_ISLNK(std::get<1>(f).st_mode))
