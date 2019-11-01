@@ -231,12 +231,16 @@ void print_file(const std::tuple<std::string, struct stat, int> &f) {
     std::cout << std::endl;
 }
 
-int outputTarget(const std::string &target) {
+int outputTarget(const std::string &target, bool multipleTargets) {
     if (nftw(target.c_str(), dir_handler, 1, FTW_MOUNT | FTW_PHYS | FTW_ACTIONRETVAL) != -1) {
         sort_files();
         for (const auto &dir: dirs) {
             for (const auto &f: dir) {
-                print_file(f);
+                if (multipleTargets && std::get<0>(f) == std::get<0>(dir[0])) {
+                    std::cout << target;
+                } else {
+                    print_file(f);
+                }
             }
             std::cout << std::endl;
         }
@@ -249,9 +253,10 @@ int outputTarget(const std::string &target) {
 
 int main(int argc, char **argv) {
     parse_config(argc, argv);
+    bool multi = cfg.targets.size() > 1;
     for (const auto &target:cfg.targets) {
         dirs.clear();
-        if (outputTarget(target))
+        if (outputTarget(target, multi))
             return 1;
     }
     return 0;
