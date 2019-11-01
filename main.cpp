@@ -188,31 +188,35 @@ void parse_config(int argc, char **argv) {
         cfg.targets.push_back(target);
 }
 
-int outputTarget(const std::string &target) {
+int outputTarget(const std::string &target, bool multipleTargets) {
     if (nftw(target.c_str(), dir_handler, 1, FTW_MOUNT | FTW_PHYS | FTW_ACTIONRETVAL) != -1) {
         sort_files();
         for (const auto &dir: dirs) {
             for (const auto &f: dir) {
-                if (std::get<2>(f) == FTW_D)
-                    std::cout << "/";
-                else if (cfg.classify)
-                    if (S_IEXEC & std::get<1>(f).st_mode)
-                        std::cout << "*";
-                    else if (S_ISLNK(std::get<1>(f).st_mode))
-                        std::cout << "@";
-                    else if (S_ISSOCK(std::get<1>(f).st_mode))
-                        std::cout << "=";
-                    else if (S_ISFIFO(std::get<1>(f).st_mode))
-                        std::cout << "|";
-                    else
-                        std::cout << "?";
-                std::cout << std::get<0>(f);
-                if (cfg.is_verbose) {
-                    struct tm *my_tm = localtime(&std::get<1>(f).st_mtim.tv_sec);
-                    std::cout << "\t\t" << std::get<1>(f).st_size << " " << 1900 + my_tm->tm_year << "-"
-                              << my_tm->tm_mon
-                              << "-"
-                              << my_tm->tm_mday << " " << my_tm->tm_hour << ":" << my_tm->tm_min;
+                if (multipleTargets && std::get<0>(f) == std::get<0>(dir[0])) {
+                    std::cout << target;
+                } else {
+                    if (std::get<2>(f) == FTW_D)
+                        std::cout << "/";
+                    else if (cfg.classify)
+                        if (S_IEXEC & std::get<1>(f).st_mode)
+                            std::cout << "*";
+                        else if (S_ISLNK(std::get<1>(f).st_mode))
+                            std::cout << "@";
+                        else if (S_ISSOCK(std::get<1>(f).st_mode))
+                            std::cout << "=";
+                        else if (S_ISFIFO(std::get<1>(f).st_mode))
+                            std::cout << "|";
+                        else
+                            std::cout << "?";
+                    std::cout << basename(std::get<0>(f).c_str());
+                    if (cfg.is_verbose) {
+                        struct tm *my_tm = localtime(&std::get<1>(f).st_mtim.tv_sec);
+                        std::cout << "\t\t" << std::get<1>(f).st_size << " " << 1900 + my_tm->tm_year << "-"
+                                  << my_tm->tm_mon
+                                  << "-"
+                                  << my_tm->tm_mday << " " << my_tm->tm_hour << ":" << my_tm->tm_min;
+                    }
                 }
                 std::cout << std::endl;
             }
@@ -227,9 +231,10 @@ int outputTarget(const std::string &target) {
 
 int main(int argc, char **argv) {
     parse_config(argc, argv);
+    bool multi = cfg.targets.size() > 1;
     for (const auto &target:cfg.targets) {
         dirs.clear();
-        if (outputTarget(target))
+        if (outputTarget(target, multi))
             return 1;
     }
     return 0;
