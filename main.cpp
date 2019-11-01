@@ -31,7 +31,7 @@ struct Config {
 };
 
 Config cfg;
-std::vector<std::vector<std::tuple<std::string, struct stat, int>>> dirs;
+std::map<std::string, std::vector<std::tuple<std::string, struct stat, int>>> dirs;
 
 bool is_special(const __mode_t &st_mode) {
     return !S_ISDIR(st_mode) && (S_IEXEC & st_mode || !S_ISREG(st_mode));
@@ -86,43 +86,21 @@ bool sort_comparator(const std::tuple<std::string, struct stat, int> &x,
 }
 
 void sort_files() {
-    std::sort(dirs.begin() + 1, dirs.end(), [](const auto &x, const auto &y) {
-        return sort_comparator(x.front(), y.front());
-    });
     for (auto &dir: dirs) {
-        std::sort(dir.begin() + 1, dir.end(), sort_comparator);
+        std::sort(dir.second.begin(), dir.second.end(), sort_comparator);
     }
 }
 
 int dir_handler(const char *filename, const struct stat *st, int info, struct FTW *ftw) {
     if (!cfg.is_recursive && ftw->level > 1)
         return FTW_SKIP_SUBTREE;
-    if (cfg.is_recursive) {
-        if (info == FTW_D)
-            dirs.emplace_back();
-    } else {
-        if (dirs.empty())
-            dirs.emplace_back();
-    }
-    dirs.back().emplace_back(std::string(filename), *st, info);
+    std::string fname = filename;
+    if (cfg.is_recursive && info == FTW_D)
+        dirs[filename].emplace_back(std::string(filename), *st, info);
+    if (ftw->level > 0 || info == FTW_F)
+        dirs[fname.substr(0, fname.find_last_of(basename(filename)) - strlen(basename(filename)))].emplace_back(
+                std::string(filename), *st, info);
     return 0;
-}
-
-// From https://stackoverflow.com/questions/5475693/using-as-end-of-options-marker-with-boostprogram-options
-std::vector<boost::program_options::option> end_of_opts_parser(std::vector<std::string> &args) {
-    std::vector<boost::program_options::option> result;
-    std::vector<std::string>::const_iterator i(args.begin());
-    if (i != args.end() && *i == "--") {
-        for (++i; i != args.end(); ++i) {
-            boost::program_options::option opt;
-            opt.string_key = "targets";
-            opt.value.push_back(*i);
-            opt.original_tokens.push_back(*i);
-            result.push_back(opt);
-        }
-        args.clear();
-    }
-    return result;
 }
 
 void parse_config(int argc, char **argv) {
@@ -158,8 +136,7 @@ void parse_config(int argc, char **argv) {
     positional.add("targets", -1);
 
     boost::program_options::variables_map vm;
-    auto parsed = boost::program_options::command_line_parser(argc, argv).extra_style_parser(
-            end_of_opts_parser).options(commandLineOptions).positional(
+    auto parsed = boost::program_options::command_line_parser(argc, argv).options(commandLineOptions).positional(
             positional).run();
     boost::program_options::store(parsed, vm);
 
@@ -207,7 +184,7 @@ void parse_config(int argc, char **argv) {
 }
 
 void print_file(const std::tuple<std::string, struct stat, int> &f) {
-    if (std::get<2>(f) == FTW_D)
+    if (S_ISDIR(std::get<1>(f).st_mode))
         std::cout << "/";
     else if (cfg.classify && is_special(std::get<1>(f).st_mode))
         if (S_IEXEC & std::get<1>(f).st_mode)
@@ -226,26 +203,26 @@ void print_file(const std::tuple<std::string, struct stat, int> &f) {
         std::cout << "\t\t" << std::get<1>(f).st_size << " " << 1900 + my_tm->tm_year << "-"
                   << my_tm->tm_mon
                   << "-"
-                  << my_tm->tm_mday << " " << my_tm->tm_hour << ":" << my_tm->tm_min;
+                  << my_tm->tm_mday << " " << my_tm->tm_hour << ":" << my_tm->tm_min
+                  << std::endl;
+    } else {
+        std::cout << " ";
     }
-    std::cout << std::endl;
 }
 
 int outputTarget(const std::string &target, bool multipleTargets) {
-    if (nftw(target.c_str(), dir_handler, 1, FTW_MOUNT | FTW_PHYS | FTW_ACTIONRETVAL) != -1) {
+    if (nftw(target.c_str(), dir_handler, 1, FTW_MOUNT | FTW_PHYS | FTW_ACTIONRETVAL | FTW_DEPTH) != -1) {
         sort_files();
         for (const auto &dir: dirs) {
-            for (const auto &f: dir) {
-                if (multipleTargets && std::get<0>(f) == std::get<0>(dir[0])) {
-                    std::cout << target << (S_ISDIR(std::get<1>(f).st_mode) ? ": " : " ") << std::endl;
-                } else {
-                    print_file(f);
-                }
+            if ((multipleTargets || dirs.size() > 1) && std::get<0>(dir.second[0]) != dir.first)
+                std::cout << dir.first << ":" << std::endl;
+            for (const auto &f: dir.second) {
+                print_file(f);
             }
-            std::cout << std::endl;
+            std::cout << std::endl << std::endl;
         }
     } else {
-        std::cerr << target << "Not a directory!" << std::endl;
+        std::cerr << "myls: cannot access '" << target << "': No such file or directory" << std::endl;
         return 1;
     }
     return 0;
